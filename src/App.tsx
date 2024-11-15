@@ -41,12 +41,24 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Send a request to the external link when the component mounts
-    fetch('https://deepanalve.pythonanywhere.com/run-script')
+  const lastTriggered = localStorage.getItem('scriptTriggeredAt');
+  const now = Date.now();
+  const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+
+  // Check if the script has never been triggered or if one hour has passed
+  if (!lastTriggered || now - parseInt(lastTriggered) > oneHour) {
+    // Send the request to the external link
+    fetch('https://alvetacontact.pythonanywhere.com/run-script')
       .then(response => response.text())
-      .then(data => console.log('Script triggered:', data))
+      .then(data => {
+        console.log('Script triggered:', data);
+        // Mark the script as triggered with the current timestamp
+        localStorage.setItem('scriptTriggeredAt', now.toString());
+      })
       .catch(error => console.error('Error triggering script:', error));
-  }, []);
+  }
+}, []);
+
 
   const getRandomMessage = () => {
     const randomIndex = Math.floor(Math.random() * randomMessages.length);
