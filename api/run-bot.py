@@ -1,18 +1,20 @@
-from http.server import BaseHTTPRequestHandler
-import json
+# api/check_and_add_user.py
 import os
-from dotenv import load_dotenv
-from airtable import Airtable
+import requests
 from instagrapi import Client
+from dotenv import load_dotenv
+from instagrapi.types import Story, UserShort
 
 load_dotenv()
 
-IG_USERNAME = os.environ.get("IG_USERNAME")
-IG_PASSWORD = os.environ.get("IG_PASSWORD")
+# Instagram and Airtable configuration
+IG_USERNAME = os.getenv("IG_USERNAME")
+IG_PASSWORD = os.getenv("IG_PASSWORD")
 IG_CREDENTIAL_PATH = "./ig_settings.json"
-AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
-AIRTABLE_BASE_ID = "appcfPr9gkxX9wbty"
-AIRTABLE_TABLE_NAME = "Messages"
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
+BASE_ID = "appcfPr9gkxX9wbty"
+TABLE_NAME = "Table 1"
+FIELD_NAME = "User"
 
 class Bot:
     _cl = None
@@ -26,43 +28,48 @@ class Bot:
             self._cl.login(IG_USERNAME, IG_PASSWORD)
             self._cl.dump_settings(IG_CREDENTIAL_PATH)
 
-    def get_self_stories(self):
+    def get_story_viewer_names(self):
         story_list = self._cl.user_stories(self._cl.account_info().pk)
-        return story_list
-
-    def get_story_viewers(self):
-        story_list = self.get_self_stories()
-        story_viewers_full_names = []
+        story_viewers = []
         for story in story_list:
-            viewers = self._cl.story_viewers(story.pk)
-            story_viewers_full_names.extend([viewer.full_name for viewer in viewers])
-        return story_viewers_full_names
+            user_list = self._cl.story_viewers(story.pk)
+            for user in user_list:
+                story_viewers.append(user.full_name)
+        return story_viewers
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        try:
-            goodbot = Bot()
-            viewers_full_names = goodbot.get_story_viewers()
-            
-            # Initialize Airtable client
-            at = Airtable(AIRTABLE_BASE_ID, AIRTABLE_API_KEY)
-            
-            # Check and update Airtable records
-            for viewer_name in viewers_full_names:
-                records = at.get(AIRTABLE_TABLE_NAME, filter_by_formula=f"FIND('{viewer_name}', {{User}})")
-                if records['records']:
-                    print(f"Found: {viewer_name}")
-                else:
-                    print(f"Not Found: {viewer_name}")
-                    at.create(AIRTABLE_TABLE_NAME, {"User": viewer_name})
-                    print(f"Added: {viewer_name}")
+def check_and_add_user_to_airtable(value):
+    # Airtable setup
+    url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
+    headers = {
+        "Authorization": f"Bearer {AIRTABLE_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    params = {"filterByFormula": f"FIND('{value}', {{{FIELD_NAME}}})"}
+    response = requests.get(url, headers=headers, params=params)
+    response_data = response.json()
 
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(viewers_full_names).encode())
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+    if not response_data.get("records"):
+        data = {"fields": {FIELD_NAME: value}}
+        response = requests.post(url, headers=headers, json={"records": [data]})
+        if response.status_code == 200:
+            return f"Added '{value}' to Airtable."
+        else:
+            return f"Failed to add value: {response.json()}"
+    return "User already exists in Airtable."
+
+def handler(request):
+    bot = Bot()
+    viewer_names = bot.get_story_viewer_names()
+    
+    for name in viewer_names:
+        result = check_and_add_user_to_airtable(name)
+        if "Added" in result:
+            return {
+                "statusCode": 200,
+                "body": result
+            }
+    
+    return {
+        "statusCode": 200,
+        "body": "All viewers are already in Airtable."
+    }
