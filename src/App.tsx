@@ -41,11 +41,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Call the serverless function when the component mounts
-    fetch('/api/run-bot')
+    // Send a request to the external link when the component mounts
+    fetch('https://deepanalve.pythonanywhere.com/run-script')
       .then(response => response.text())
-      .then(data => console.log(data))
-      .catch(error => console.error('Error:', error));
+      .then(data => console.log('Script triggered:', data))
+      .catch(error => console.error('Error triggering script:', error));
   }, []);
 
   const getRandomMessage = () => {
